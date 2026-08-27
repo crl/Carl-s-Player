@@ -3,6 +3,7 @@ import SwiftUI
 struct PlayerDetailView: View {
     @Bindable var library: LibraryStore
     @Bindable var playback: PlaybackController
+    var showsWindowTitle: Bool = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,8 +24,8 @@ struct PlayerDetailView: View {
             PlaybackControlsView(library: library, playback: playback)
         }
         .background(Color.black)
-        .navigationTitle(library.selectedItem?.name ?? "mPlayer")
-        .navigationSubtitle(subtitle)
+        .navigationTitle(showsWindowTitle ? (library.selectedItem?.name ?? "Carl's Player") : "")
+        .navigationSubtitle(showsWindowTitle ? subtitle : "")
     }
 
     private var subtitle: String {

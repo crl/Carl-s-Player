@@ -6,10 +6,6 @@ struct MediaItemCell: View {
     let showsName: Bool
     let isSelected: Bool
 
-    private var thumbnailHeight: CGFloat {
-        thumbnailWidth * 9 / 16
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             thumbnail
@@ -25,27 +21,27 @@ struct MediaItemCell: View {
                         .monospacedDigit()
                         .lineLimit(1)
                 }
-                .frame(width: thumbnailWidth, alignment: .leading)
-                .clipped()
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(6)
+        .padding(ThumbnailLayout.cellPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(isSelected ? Color.accentColor.opacity(0.28) : .clear)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .help(item.name)
     }
 
     private var thumbnail: some View {
         ThumbnailView(item: item, iconScale: thumbnailWidth)
-            .frame(width: thumbnailWidth, height: thumbnailHeight)
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(alignment: .bottomTrailing) {
                 if !showsName, let duration = item.duration {

@@ -16,10 +16,12 @@ final class LibraryStore {
     var thumbnailSize: Double = 88
 
     static let thumbnailSizeRange = 64.0...220.0
-    static let hideNameThumbnailSize = 136.0
 
-    var showsThumbnailNames: Bool {
-        thumbnailSize < Self.hideNameThumbnailSize
+    var thumbnailSizeT: CGFloat {
+        let lower = Self.thumbnailSizeRange.lowerBound
+        let span = Self.thumbnailSizeRange.upperBound - lower
+        guard span > 0 else { return 0 }
+        return CGFloat((thumbnailSize - lower) / span)
     }
 
     var selectedItem: MediaItem? {

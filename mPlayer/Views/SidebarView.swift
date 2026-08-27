@@ -2,9 +2,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Bindable var library: LibraryStore
-
-    private let gridPadding: CGFloat = 10
-    private let cellPadding: CGFloat = 6
+    var columnWidth: CGFloat
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,37 +29,37 @@ struct SidebarView: View {
                 thumbnailSizeSlider
             }
         }
-        .navigationTitle(library.folderName ?? "资料库")
     }
 
     private var mediaGrid: some View {
-        GeometryReader { geo in
-            let available = max(80, geo.size.width - gridPadding * 2)
-            let thumbWidth = min(library.thumbnailSize, max(64, available - cellPadding * 2))
-            let columnMin = min(thumbWidth + cellPadding * 2, available)
+        let metrics = ThumbnailLayout.metrics(
+            columnWidth: columnWidth,
+            sizeT: library.thumbnailSizeT
+        )
+        let columns = Array(
+            repeating: GridItem(.flexible(), spacing: ThumbnailLayout.spacing),
+            count: metrics.columns
+        )
 
-            ScrollView {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: columnMin), spacing: 8)],
-                    spacing: 8
-                ) {
-                    ForEach(library.items) { item in
-                        Button {
-                            library.selectedID = item.id
-                        } label: {
-                            MediaItemCell(
-                                item: item,
-                                thumbnailWidth: thumbWidth,
-                                showsName: library.showsThumbnailNames,
-                                isSelected: library.selectedID == item.id
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .contentShape(Rectangle())
+        return ScrollView {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: ThumbnailLayout.spacing) {
+                ForEach(library.items) { item in
+                    Button {
+                        library.selectedID = item.id
+                    } label: {
+                        MediaItemCell(
+                            item: item,
+                            thumbnailWidth: metrics.thumbWidth,
+                            showsName: metrics.thumbWidth < ThumbnailLayout.hideNameSize,
+                            isSelected: library.selectedID == item.id
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
                 }
-                .padding(gridPadding)
             }
+            .padding(ThumbnailLayout.gridPadding)
         }
     }
 
