@@ -9,12 +9,12 @@ struct PlayerDetailView: View {
     @State private var peekItem: MediaItem?
     @State private var peekDelta = 0
     @State private var isSwitching = false
+    @State private var freezeGestures = false
     @State private var pageHeight: CGFloat = 600
     @State private var playerReadyForDisplay = false
 
     var body: some View {
-        let pending = library.pendingTransition
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             playerStage
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -23,7 +23,7 @@ struct PlayerDetailView: View {
         .background(Color.black)
         .navigationTitle(showsWindowTitle ? (library.selectedItem?.name ?? "Carl's Player") : "")
         .navigationSubtitle(showsWindowTitle ? subtitle : "")
-        .onChange(of: pending) { _, newPending in
+        .onChange(of: library.pendingTransition) { _, newPending in
             guard let newPending else { return }
             Task { await finishTransition(newPending) }
         }
@@ -50,6 +50,7 @@ struct PlayerDetailView: View {
                     livePage
                         .frame(width: geo.size.width, height: height)
                         .offset(y: dragOffset)
+                        .allowsHitTesting(false)
 
                     if let peekItem {
                         PeekPageView(item: peekItem)
@@ -61,10 +62,19 @@ struct PlayerDetailView: View {
 
                     PlayerInteractionCatcher(
                         pageHeight: height,
-                        onPan: { translationY, ended, isClick in
-                            handlePan(translationY: translationY, ended: ended, isClick: isClick, height: height)
+                        isPaging: isSwitching || freezeGestures || library.pendingTransition != nil,
+                        onPan: { translationY, ended, isClick, isDrag in
+                            handlePan(
+                                translationY: translationY,
+                                ended: ended,
+                                isClick: isClick,
+                                isDrag: isDrag,
+                                height: height
+                            )
                         }
                     )
+                    .frame(width: geo.size.width, height: height)
+                    .contentShape(Rectangle())
 
                     if statusVisible, abs(dragOffset) < 8, peekItem == nil {
                         CenterPlaybackStatus(isPlaying: playback.isPlaying)
@@ -98,8 +108,14 @@ struct PlayerDetailView: View {
         }
     }
 
-    private func handlePan(translationY: CGFloat, ended: Bool, isClick: Bool, height: CGFloat) {
-        guard !isSwitching, library.pendingTransition == nil, library.selectedItem != nil else { return }
+    private func handlePan(
+        translationY: CGFloat,
+        ended: Bool,
+        isClick: Bool,
+        isDrag: Bool,
+        height: CGFloat
+    ) {
+        guard !isSwitching, !freezeGestures, library.selectedItem != nil else { return }
         if isClick {
             playback.togglePlay()
             resetDrag(animated: false)
@@ -107,7 +123,7 @@ struct PlayerDetailView: View {
         }
         applyInteractiveOffset(translationY)
         if ended {
-            settle(height: height)
+            settle(height: height, isDrag: isDrag)
         }
     }
 
@@ -119,6 +135,10 @@ struct PlayerDetailView: View {
             peekItem = nil
             peekDelta = 0
             return
+        }
+        if peekDelta != 0 {
+            let sameDirection = (peekDelta > 0 && y < 0) || (peekDelta < 0 && y > 0)
+            guard sameDirection else { return }
         }
         if let adjacent = library.item(offset: delta, wrapping: library.wrapsAdjacently),
            adjacent.id != library.selectedID {
@@ -132,10 +152,12 @@ struct PlayerDetailView: View {
         }
     }
 
-    private func settle(height: CGFloat) {
-        let threshold = max(height * 0.2, 72)
+    private func settle(height: CGFloat, isDrag: Bool) {
+        let threshold = isDrag ? max(height * 0.2, 72) : 28
         let shouldSwitch = abs(dragOffset) >= threshold && peekItem != nil
         if shouldSwitch, let peekItem {
+            freezeGestures = true
+            PlayerInteractionNSView.suppressScroll(for: 0.9)
             library.requestSelect(peekItem)
             return
         }
@@ -150,8 +172,13 @@ struct PlayerDetailView: View {
     private func finishTransition(_ pending: LibraryStore.MediaTransition) async {
         guard !isSwitching else { return }
         isSwitching = true
+        defer {
+            if isSwitching {
+                isSwitching = false
+            }
+            freezeGestures = false
+        }
         guard let item = library.items.first(where: { $0.id == pending.itemID }) else {
-            isSwitching = false
             library.pendingTransition = nil
             resetDrag(animated: false)
             return
@@ -178,6 +205,10 @@ struct PlayerDetailView: View {
             dragOffset = target
         }
         try? await Task.sleep(for: .milliseconds(380))
+        guard !Task.isCancelled else {
+            isSwitching = false
+            return
+        }
 
         var rest = Transaction()
         rest.disablesAnimations = true
@@ -189,9 +220,12 @@ struct PlayerDetailView: View {
             playback.pauseNextLoadAtStart()
             library.commitPendingTransition()
         }
+        try? await Task.sleep(for: .milliseconds(400))
+        isSwitching = false
 
         await waitForPlaybackDisplay(item)
         try? await Task.sleep(for: .milliseconds(16))
+        guard !Task.isCancelled else { return }
 
         var reveal = Transaction()
         reveal.disablesAnimations = true
@@ -200,9 +234,10 @@ struct PlayerDetailView: View {
                 peekItem = nil
                 peekDelta = 0
             }
-            isSwitching = false
         }
-        playback.startPlaying()
+        if library.selectedID == item.id {
+            playback.startPlaying()
+        }
     }
 
     private func prefetchAdjacentFirstFrames() {
@@ -220,7 +255,7 @@ struct PlayerDetailView: View {
 
     @MainActor
     private func waitForPlaybackDisplay(_ item: MediaItem) async {
-        let deadline = Date().addingTimeInterval(1.2)
+        let deadline = Date().addingTimeInterval(0.45)
         var itemReadyAt: Date?
         while Date() < deadline {
             let itemReady = playback.player.currentItem?.status == .readyToPlay

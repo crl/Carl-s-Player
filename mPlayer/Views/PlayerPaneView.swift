@@ -29,6 +29,7 @@ final class PlayerContainerView: NSView {
     private var lastAspect: CGFloat?
 
     override var isOpaque: Bool { false }
+    override var acceptsFirstResponder: Bool { false }
 
     var onReadyForDisplayChange: ((Bool) -> Void)?
 
