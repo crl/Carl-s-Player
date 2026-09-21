@@ -73,6 +73,21 @@ final class PlayerInteractionNSView: NSView {
         addCursorRect(bounds, cursor: .pointingHand)
     }
 
+    override func keyDown(with event: NSEvent) {
+        if isPaging || Date().timeIntervalSinceReferenceDate < Self.suppressUntil {
+            super.keyDown(with: event)
+            return
+        }
+        switch event.specialKey {
+        case .downArrow:
+            finishSession(offset: -pageHeight * 0.4, isDrag: false)
+        case .upArrow:
+            finishSession(offset: pageHeight * 0.4, isDrag: false)
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
     override func scrollWheel(with event: NSEvent) {
         if isPaging || Date().timeIntervalSinceReferenceDate < Self.suppressUntil {
             return

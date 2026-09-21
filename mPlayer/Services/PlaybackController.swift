@@ -8,12 +8,13 @@ final class PlaybackController {
     let player = AVPlayer()
 
     var isPlaying = false
+    /// True only when the user paused; auto-advance and item loads must not show the play glyph.
+    var pausedByUser = false
     var currentTime: TimeInterval = 0
     var duration: TimeInterval = 0
     var isSeeking = false
     var hasItem = false
     var finishToken = 0
-    var playToggleToken = 0
     var playbackRate: Float = 1 {
         didSet { applyPlaybackRate() }
     }
@@ -92,6 +93,7 @@ final class PlaybackController {
                 }
             }
         } else {
+            pausedByUser = false
             player.playImmediately(atRate: playbackRate)
             isPlaying = true
         }
@@ -117,6 +119,7 @@ final class PlaybackController {
         player.replaceCurrentItem(with: nil)
         hasItem = false
         isPlaying = false
+        pausedByUser = false
         currentTime = 0
         duration = 0
     }
@@ -126,14 +129,16 @@ final class PlaybackController {
         if isPlaying {
             player.pause()
             isPlaying = false
+            pausedByUser = true
         } else if duration > 0, currentTime >= duration - 0.2 {
+            pausedByUser = false
             isPlaying = true
             replay()
         } else {
+            pausedByUser = false
             player.playImmediately(atRate: playbackRate)
             isPlaying = true
         }
-        playToggleToken += 1
     }
 
     func replay() {
@@ -148,6 +153,7 @@ final class PlaybackController {
     }
 
     func pauseAtEnd() {
+        pausedByUser = false
         isPlaying = false
         if duration > 0 {
             currentTime = duration
@@ -176,6 +182,7 @@ final class PlaybackController {
     }
 
     func startPlaying() {
+        pausedByUser = false
         player.playImmediately(atRate: playbackRate)
         isPlaying = true
     }

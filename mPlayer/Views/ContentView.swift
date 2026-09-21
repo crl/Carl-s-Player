@@ -40,6 +40,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     sidebarToggleButton
+                        .controlSize(.small)
                 }
 
                 titleToolbarItem
@@ -53,6 +54,7 @@ struct ContentView: View {
                     }
                     .help("打开文件夹")
                     .keyboardShortcut("o", modifiers: .command)
+                    .controlSize(.small)
                 }
             }
         }
@@ -98,7 +100,7 @@ struct ContentView: View {
             Color.clear
                 .frame(width: max(0, titleCenterOffset * 2))
             Text(toolbarTitle)
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(width: titleMaxWidth)

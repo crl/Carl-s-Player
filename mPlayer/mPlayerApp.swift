@@ -8,6 +8,7 @@ struct mPlayerApp: App {
                 .frame(minWidth: 800, minHeight: 500)
         }
         .defaultSize(width: 1100, height: 720)
+        .windowToolbarStyle(.unifiedCompact)
         .commands {
             CommandGroup(replacing: .newItem) {}
         }

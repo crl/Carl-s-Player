@@ -58,9 +58,9 @@ final class LibraryStore {
         securityScopedURL = url
         folderURL = url
         folderName = url.lastPathComponent
-        selectedID = nil
         pendingTransition = nil
         items = Self.scan(url)
+        selectedID = items.first?.id
         scanGeneration += 1
         let generation = scanGeneration
         Task { await loadDurations(generation: generation) }

@@ -4,7 +4,6 @@ struct PlayerDetailView: View {
     @Bindable var library: LibraryStore
     @Bindable var playback: PlaybackController
     var showsWindowTitle: Bool = true
-    @State private var statusVisible = false
     @State private var dragOffset: CGFloat = 0
     @State private var peekItem: MediaItem?
     @State private var peekDelta = 0
@@ -27,13 +26,29 @@ struct PlayerDetailView: View {
             guard let newPending else { return }
             Task { await finishTransition(newPending) }
         }
-        .onChange(of: playback.playToggleToken) { _, token in
-            guard token > 0, library.selectedItem != nil, abs(dragOffset) < 8 else { return }
-            Task { await flashStatus() }
-        }
         .onChange(of: library.selectedID) { _, _ in
-            statusVisible = false
             prefetchAdjacentFirstFrames()
+        }
+        .background {
+            HStack {
+                Button("下一条") { pageWithKey(1) }
+                    .keyboardShortcut(.downArrow, modifiers: [])
+                Button("上一条") { pageWithKey(-1) }
+                    .keyboardShortcut(.upArrow, modifiers: [])
+            }
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    private func pageWithKey(_ delta: Int) {
+        guard !isSwitching, !freezeGestures, library.pendingTransition == nil, library.selectedItem != nil else { return }
+        freezeGestures = true
+        PlayerInteractionNSView.suppressScroll(for: 0.9)
+        if library.requestAdjacent(delta: delta) == nil {
+            freezeGestures = false
         }
     }
 
@@ -76,8 +91,8 @@ struct PlayerDetailView: View {
                     .frame(width: geo.size.width, height: height)
                     .contentShape(Rectangle())
 
-                    if statusVisible, abs(dragOffset) < 8, peekItem == nil {
-                        CenterPlaybackStatus(isPlaying: playback.isPlaying)
+                    if showsPausedGlyph {
+                        CenterPausedStatus()
                             .transition(.opacity)
                             .allowsHitTesting(false)
                     }
@@ -172,6 +187,7 @@ struct PlayerDetailView: View {
     private func finishTransition(_ pending: LibraryStore.MediaTransition) async {
         guard !isSwitching else { return }
         isSwitching = true
+        playback.pausedByUser = false
         defer {
             if isSwitching {
                 isSwitching = false
@@ -221,12 +237,14 @@ struct PlayerDetailView: View {
             library.commitPendingTransition()
         }
         try? await Task.sleep(for: .milliseconds(400))
-        isSwitching = false
 
         await waitForPlaybackDisplay(item)
         try? await Task.sleep(for: .milliseconds(16))
         guard !Task.isCancelled else { return }
 
+        if library.selectedID == item.id {
+            playback.startPlaying()
+        }
         var reveal = Transaction()
         reveal.disablesAnimations = true
         withTransaction(reveal) {
@@ -234,9 +252,6 @@ struct PlayerDetailView: View {
                 peekItem = nil
                 peekDelta = 0
             }
-        }
-        if library.selectedID == item.id {
-            playback.startPlaying()
         }
     }
 
@@ -286,17 +301,14 @@ struct PlayerDetailView: View {
         peekDelta = 0
     }
 
-    @MainActor
-    private func flashStatus() async {
-        withAnimation(.easeOut(duration: 0.18)) {
-            statusVisible = true
-        }
-        guard playback.isPlaying else { return }
-        try? await Task.sleep(for: .milliseconds(800))
-        guard !Task.isCancelled else { return }
-        withAnimation(.easeOut(duration: 0.28)) {
-            statusVisible = false
-        }
+    private var showsPausedGlyph: Bool {
+        playback.pausedByUser
+            && !playback.isPlaying
+            && library.selectedItem != nil
+            && abs(dragOffset) < 8
+            && peekItem == nil
+            && !isSwitching
+            && library.pendingTransition == nil
     }
 
     private var subtitle: String {
@@ -395,23 +407,13 @@ private struct BlurredPreviewBackground: View {
     }
 }
 
-private struct CenterPlaybackStatus: View {
-    let isPlaying: Bool
-
+private struct CenterPausedStatus: View {
     var body: some View {
-        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-            .font(.system(size: 34, weight: .semibold))
-            .foregroundStyle(.white)
-            .offset(x: isPlaying ? 0 : 3)
-            .frame(width: 84, height: 84)
-            .background {
-                Circle()
-                    .fill(.black.opacity(0.46))
-                    .overlay {
-                        Circle()
-                            .strokeBorder(.white.opacity(0.14), lineWidth: 1)
-                    }
-            }
+        Image(systemName: "play.fill")
+            .font(.system(size: 56, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.92))
+            .offset(x: 4)
+            .shadow(color: .black.opacity(0.35), radius: 10, y: 1)
             .accessibilityHidden(true)
     }
 }
