@@ -5,20 +5,46 @@ import Foundation
 final class ThumbnailService: @unchecked Sendable {
     static let shared = ThumbnailService()
 
-    private let cache = NSCache<NSURL, NSImage>()
+    private let previewCache = NSCache<NSURL, NSImage>()
+    private let firstFrameCache = NSCache<NSURL, NSImage>()
 
     private init() {
-        cache.countLimit = 400
+        previewCache.countLimit = 400
+        firstFrameCache.countLimit = 80
+    }
+
+    func cachedImage(for item: MediaItem) -> NSImage? {
+        previewCache.object(forKey: item.url as NSURL)
+    }
+
+    func cachedFirstFrame(for item: MediaItem) -> NSImage? {
+        firstFrameCache.object(forKey: item.url as NSURL)
     }
 
     func image(for item: MediaItem) async -> NSImage? {
         let key = item.url as NSURL
-        if let cached = cache.object(forKey: key) {
+        if let cached = previewCache.object(forKey: key) {
             return cached
         }
         let generated = await generate(item)
         if let generated {
-            cache.setObject(generated, forKey: key)
+            previewCache.setObject(generated, forKey: key)
+        }
+        return generated
+    }
+
+    /// Exact first decoded frame, used as the swipe cover so it matches playback at t=0.
+    func firstFrame(for item: MediaItem) async -> NSImage? {
+        if item.kind == .audio {
+            return await image(for: item)
+        }
+        let key = item.url as NSURL
+        if let cached = firstFrameCache.object(forKey: key) {
+            return cached
+        }
+        let generated = await videoFrame(url: item.url, at: .zero, exact: true, maxSize: CGSize(width: 1080, height: 1920))
+        if let generated {
+            firstFrameCache.setObject(generated, forKey: key)
         }
         return generated
     }
@@ -26,27 +52,34 @@ final class ThumbnailService: @unchecked Sendable {
     private func generate(_ item: MediaItem) async -> NSImage? {
         switch item.kind {
         case .video:
-            return await videoThumbnail(url: item.url)
+            if let preview = await videoFrame(
+                url: item.url,
+                at: CMTime(seconds: 1, preferredTimescale: 600),
+                exact: false,
+                maxSize: CGSize(width: 540, height: 960)
+            ) {
+                return preview
+            }
+            return await videoFrame(url: item.url, at: .zero, exact: false, maxSize: CGSize(width: 540, height: 960))
         case .audio:
             return await audioArtwork(url: item.url)
         }
     }
 
-    private func videoThumbnail(url: URL) async -> NSImage? {
+    private func videoFrame(url: URL, at time: CMTime, exact: Bool, maxSize: CGSize) async -> NSImage? {
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 540, height: 960)
-        generator.requestedTimeToleranceBefore = CMTime(seconds: 0.5, preferredTimescale: 600)
-        generator.requestedTimeToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
-
-        if let image = await cgImage(from: generator, at: CMTime(seconds: 1, preferredTimescale: 600)) {
-            return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+        generator.maximumSize = maxSize
+        if exact {
+            generator.requestedTimeToleranceBefore = .zero
+            generator.requestedTimeToleranceAfter = .zero
+        } else {
+            generator.requestedTimeToleranceBefore = CMTime(seconds: 0.5, preferredTimescale: 600)
+            generator.requestedTimeToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
         }
-        if let image = await cgImage(from: generator, at: .zero) {
-            return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-        }
-        return nil
+        guard let image = await cgImage(from: generator, at: time) else { return nil }
+        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     }
 
     private func cgImage(from generator: AVAssetImageGenerator, at time: CMTime) async -> CGImage? {

@@ -28,8 +28,17 @@ final class LibraryStore {
         items.first { $0.id == selectedID }
     }
 
+    /// Set by `requestSelect`; PlayerDetailView animates then calls `commitPendingTransition`.
+    var pendingTransition: MediaTransition?
+
     private var securityScopedURL: URL?
     private var scanGeneration = 0
+
+    struct MediaTransition: Equatable {
+        let itemID: MediaItem.ID
+        /// `+1` next (swipe up), `-1` previous (swipe down).
+        let delta: Int
+    }
 
     func openFolder() {
         let panel = NSOpenPanel()
@@ -50,6 +59,7 @@ final class LibraryStore {
         folderURL = url
         folderName = url.lastPathComponent
         selectedID = nil
+        pendingTransition = nil
         items = Self.scan(url)
         scanGeneration += 1
         let generation = scanGeneration
@@ -61,31 +71,85 @@ final class LibraryStore {
         case .loopOne:
             playback.replay()
         case .sequential:
-            if let next = nextItem(wrapping: false) {
-                selectedID = next.id
-            } else {
+            if !requestNextLikeScroll(wrapping: false) {
                 playback.pauseAtEnd()
             }
         case .loopAll:
-            guard let next = nextItem(wrapping: true) else { return }
-            if next.id == selectedID {
+            if !requestNextLikeScroll(wrapping: true) {
                 playback.replay()
-            } else {
-                selectedID = next.id
             }
         }
     }
 
-    private func nextItem(wrapping: Bool) -> MediaItem? {
+    func item(offset: Int, wrapping: Bool) -> MediaItem? {
         guard !items.isEmpty else { return nil }
         guard let selectedID, let index = items.firstIndex(where: { $0.id == selectedID }) else {
             return items.first
         }
-        let nextIndex = index + 1
-        if nextIndex < items.count {
-            return items[nextIndex]
+        let target = index + offset
+        if wrapping {
+            let count = items.count
+            let wrapped = ((target % count) + count) % count
+            return items[wrapped]
         }
-        return wrapping ? items.first : nil
+        guard items.indices.contains(target) else { return nil }
+        return items[target]
+    }
+
+    var wrapsAdjacently: Bool {
+        playbackMode == .loopAll
+    }
+
+    func requestSelect(_ item: MediaItem) {
+        guard items.contains(where: { $0.id == item.id }) else { return }
+        if selectedID == nil || selectedID == item.id {
+            selectedID = item.id
+            pendingTransition = nil
+            return
+        }
+        let delta = direction(to: item)
+        guard delta != 0 else {
+            selectedID = item.id
+            pendingTransition = nil
+            return
+        }
+        pendingTransition = MediaTransition(itemID: item.id, delta: delta)
+    }
+
+    func requestAdjacent(delta: Int) -> MediaItem? {
+        guard let item = item(offset: delta, wrapping: wrapsAdjacently) else { return nil }
+        if item.id == selectedID { return nil }
+        pendingTransition = MediaTransition(itemID: item.id, delta: delta)
+        return item
+    }
+
+    /// Always slides the next item up from below, matching a Douyin-style scroll.
+    @discardableResult
+    func requestNextLikeScroll(wrapping: Bool) -> Bool {
+        guard let next = item(offset: 1, wrapping: wrapping), next.id != selectedID else {
+            return false
+        }
+        pendingTransition = MediaTransition(itemID: next.id, delta: 1)
+        return true
+    }
+
+    func commitPendingTransition() {
+        guard let pending = pendingTransition else { return }
+        selectedID = pending.itemID
+        pendingTransition = nil
+    }
+
+    private func direction(to item: MediaItem) -> Int {
+        guard let selectedID,
+              let from = items.firstIndex(where: { $0.id == selectedID }),
+              let to = items.firstIndex(where: { $0.id == item.id }),
+              from != to
+        else { return 0 }
+        if wrapsAdjacently {
+            if from == items.count - 1, to == 0 { return 1 }
+            if from == 0, to == items.count - 1 { return -1 }
+        }
+        return to > from ? 1 : -1
     }
 
     private func stopAccessing() {

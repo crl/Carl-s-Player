@@ -34,6 +34,7 @@ final class PlaybackController {
     private var endObserver: NSObjectProtocol?
     private var rateObserver: NSKeyValueObservation?
     private var volumeBeforeMute: Float = 1
+    private var pauseNextLoadAtFirstFrame = false
 
     init() {
         player.volume = volume
@@ -55,9 +56,15 @@ final class PlaybackController {
         }
     }
 
+    func pauseNextLoadAtStart() {
+        pauseNextLoadAtFirstFrame = true
+    }
+
     func load(_ item: MediaItem) {
-        player.pause()
         removeEndObserver()
+
+        let holdAtFirstFrame = pauseNextLoadAtFirstFrame
+        pauseNextLoadAtFirstFrame = false
 
         let playerItem = AVPlayerItem(url: item.url)
         player.replaceCurrentItem(with: playerItem)
@@ -75,6 +82,20 @@ final class PlaybackController {
             }
         }
 
+        if holdAtFirstFrame {
+            player.pause()
+            isPlaying = false
+            player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.player.preroll(atRate: self.playbackRate, completionHandler: { _ in })
+                }
+            }
+        } else {
+            player.playImmediately(atRate: playbackRate)
+            isPlaying = true
+        }
+
         Task {
             if let loaded = try? await playerItem.asset.load(.duration) {
                 let seconds = loaded.seconds
@@ -82,9 +103,12 @@ final class PlaybackController {
                     duration = seconds
                 }
             }
-            player.playImmediately(atRate: playbackRate)
-            isPlaying = true
         }
+    }
+
+    func isCurrentItem(_ item: MediaItem) -> Bool {
+        guard let asset = player.currentItem?.asset as? AVURLAsset else { return false }
+        return asset.url.standardizedFileURL == item.url.standardizedFileURL
     }
 
     func unload() {
@@ -151,7 +175,7 @@ final class PlaybackController {
         currentTime = clamped
     }
 
-    private func startPlaying() {
+    func startPlaying() {
         player.playImmediately(atRate: playbackRate)
         isPlaying = true
     }

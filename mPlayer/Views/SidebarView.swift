@@ -45,7 +45,7 @@ struct SidebarView: View {
             LazyVGrid(columns: columns, alignment: .leading, spacing: ThumbnailLayout.spacing) {
                 ForEach(library.items) { item in
                     Button {
-                        library.selectedID = item.id
+                        library.requestSelect(item)
                     } label: {
                         MediaItemCell(
                             item: item,
