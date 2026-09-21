@@ -40,7 +40,7 @@ struct MediaItemCell: View {
 
     private var thumbnail: some View {
         ThumbnailView(item: item, iconScale: thumbnailWidth)
-            .aspectRatio(16 / 9, contentMode: .fit)
+            .aspectRatio(ThumbnailLayout.thumbnailAspectRatio, contentMode: .fit)
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(alignment: .bottomTrailing) {

@@ -4,12 +4,19 @@ struct PlayerDetailView: View {
     @Bindable var library: LibraryStore
     @Bindable var playback: PlaybackController
     var showsWindowTitle: Bool = true
+    @State private var statusVisible = false
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
+                if let item = library.selectedItem {
+                    BlurredPreviewBackground(item: item)
+                } else {
+                    Color.black
+                }
+
                 PlayerPaneView(player: playback.player)
-                    .background(.black)
+                    .opacity(library.selectedItem?.kind == .audio ? 0 : 1)
 
                 if let item = library.selectedItem, item.kind == .audio {
                     AudioStageView(item: item)
@@ -17,9 +24,43 @@ struct PlayerDetailView: View {
 
                 if library.selectedItem == nil {
                     emptyState
+                } else {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            playback.togglePlay()
+                        }
+                        .onHover { hovering in
+                            if hovering {
+                                NSCursor.pointingHand.set()
+                            } else {
+                                NSCursor.arrow.set()
+                            }
+                        }
+
+                    if statusVisible {
+                        CenterPlaybackStatus(isPlaying: playback.isPlaying)
+                            .transition(.scale(scale: 0.84).combined(with: .opacity))
+                            .allowsHitTesting(false)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .task(id: playback.playToggleToken) {
+                guard playback.playToggleToken > 0, library.selectedItem != nil else { return }
+                withAnimation(.spring(duration: 0.22, bounce: 0.18)) {
+                    statusVisible = true
+                }
+                guard playback.isPlaying else { return }
+                try? await Task.sleep(for: .milliseconds(800))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.28)) {
+                    statusVisible = false
+                }
+            }
+            .onChange(of: library.selectedID) { _, _ in
+                statusVisible = false
+            }
 
             PlaybackControlsView(library: library, playback: playback)
         }
@@ -54,6 +95,56 @@ struct PlayerDetailView: View {
                 description: Text("点击左侧列表中的文件即可播放")
             )
         }
+    }
+}
+
+private struct BlurredPreviewBackground: View {
+    let item: MediaItem
+    @State private var image: NSImage?
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Color.black
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .scaleEffect(1.2)
+                        .blur(radius: 56)
+                        .saturation(1.28)
+                        .brightness(-0.04)
+                }
+                Color.black.opacity(0.26)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
+        }
+        .task(id: item.id) {
+            image = await ThumbnailService.shared.image(for: item)
+        }
+    }
+}
+
+private struct CenterPlaybackStatus: View {
+    let isPlaying: Bool
+
+    var body: some View {
+        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+            .font(.system(size: 34, weight: .semibold))
+            .foregroundStyle(.white)
+            .offset(x: isPlaying ? 0 : 3)
+            .frame(width: 84, height: 84)
+            .background {
+                Circle()
+                    .fill(.black.opacity(0.46))
+                    .overlay {
+                        Circle()
+                            .strokeBorder(.white.opacity(0.14), lineWidth: 1)
+                    }
+            }
+            .accessibilityHidden(true)
     }
 }
 

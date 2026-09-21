@@ -13,16 +13,31 @@ final class PlaybackController {
     var isSeeking = false
     var hasItem = false
     var finishToken = 0
+    var playToggleToken = 0
+    var playbackRate: Float = 1 {
+        didSet { applyPlaybackRate() }
+    }
+    var isMuted = false {
+        didSet { player.isMuted = isMuted }
+    }
     var volume: Float = 1 {
-        didSet { player.volume = volume }
+        didSet {
+            player.volume = volume
+            if volume > 0.001 {
+                isMuted = false
+                volumeBeforeMute = volume
+            }
+        }
     }
 
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var rateObserver: NSKeyValueObservation?
+    private var volumeBeforeMute: Float = 1
 
     init() {
         player.volume = volume
+        player.isMuted = isMuted
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
             queue: .main
@@ -67,7 +82,7 @@ final class PlaybackController {
                     duration = seconds
                 }
             }
-            player.play()
+            player.playImmediately(atRate: playbackRate)
             isPlaying = true
         }
     }
@@ -87,14 +102,14 @@ final class PlaybackController {
         if isPlaying {
             player.pause()
             isPlaying = false
-            return
-        }
-        if duration > 0, currentTime >= duration - 0.2 {
+        } else if duration > 0, currentTime >= duration - 0.2 {
+            isPlaying = true
             replay()
         } else {
-            player.play()
+            player.playImmediately(atRate: playbackRate)
             isPlaying = true
         }
+        playToggleToken += 1
     }
 
     func replay() {
@@ -103,8 +118,7 @@ final class PlaybackController {
             Task { @MainActor in
                 guard let self else { return }
                 self.currentTime = 0
-                self.player.play()
-                self.isPlaying = true
+                self.startPlaying()
             }
         }
     }
@@ -116,11 +130,35 @@ final class PlaybackController {
         }
     }
 
+    func toggleMute() {
+        if isMuted {
+            isMuted = false
+            if volume <= 0.001 {
+                volume = volumeBeforeMute > 0.001 ? volumeBeforeMute : 1
+            }
+            return
+        }
+        if volume > 0.001 {
+            volumeBeforeMute = volume
+        }
+        isMuted = true
+    }
+
     func seek(to time: TimeInterval) {
         let clamped = max(0, min(time, max(duration, 0)))
         let cmTime = CMTime(seconds: clamped, preferredTimescale: 600)
         player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
         currentTime = clamped
+    }
+
+    private func startPlaying() {
+        player.playImmediately(atRate: playbackRate)
+        isPlaying = true
+    }
+
+    private func applyPlaybackRate() {
+        guard isPlaying else { return }
+        player.rate = playbackRate
     }
 
     private func removeEndObserver() {

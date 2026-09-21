@@ -8,6 +8,8 @@ enum ThumbnailLayout {
     static let minColumns = 2
     static let hideNameSize: CGFloat = 136
     static let maxSidebarWidth: CGFloat = 640
+    /// Portrait media cells (width : height).
+    static let thumbnailAspectRatio: CGFloat = 9 / 16
 
     static var minCell: CGFloat { minThumbnail + cellPadding * 2 }
 
